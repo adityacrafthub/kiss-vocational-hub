@@ -1,0 +1,2 @@
+import {createHmac} from 'node:crypto';
+export function code(secret,step=Math.floor(Date.now()/30000)){let v=0,bits=0;const arr=[];for(const c of secret){v=(v<<5)|'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'.indexOf(c);bits+=5;if(bits>=8){bits-=8;arr.push((v>>>bits)&255)}}const b=Buffer.alloc(8);b.writeBigUInt64BE(BigInt(step));const h=createHmac('sha1',Buffer.from(arr)).update(b).digest(),o=h[19]&15;return String((h.readUInt32BE(o)&0x7fffffff)%1000000).padStart(6,'0')}

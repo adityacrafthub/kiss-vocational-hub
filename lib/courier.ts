@@ -1,0 +1,8 @@
+import {settings,HttpError} from './security';
+import {validPoint} from './locations';
+import {updateWorkspace} from './workspace';
+import {auditState} from './audit';
+export type CourierUpdate={eventId:string;shipmentId:string;latitude:number;longitude:number;observedAt:string;eta?:string};
+export async function courierUpdate(b:CourierUpdate,mock=false){if(!b||typeof b.eventId!=='string'||b.eventId.length>120||typeof b.shipmentId!=='string'||b.shipmentId.length>120||!validPoint({lat:b.latitude,lng:b.longitude}))throw new HttpError('Invalid courier location payload.');const time=Date.parse(b.observedAt);if(!Number.isFinite(time)||time>Date.now()+60000||time<Date.now()-24*3600000)throw new HttpError('Location timestamp is invalid or stale.');if(b.eta&&(!Number.isFinite(Date.parse(b.eta))||Date.parse(b.eta)<time))throw new HttpError('Invalid arrival estimate.');
+ await updateWorkspace(s=>{const o=s.orders?.find(o=>o.shipment?.id===b.shipmentId&&o.shipment.provider===settings().COURIER_PROVIDER);if(!o)throw new HttpError('Shipment not linked.',404);if(['Delivered','Cancelled'].includes(o.status))return {state:s,result:null};if(o.courierTracking&&Date.parse(o.courierTracking.updated)>=time)return {state:s,result:null};o.courierTracking={lat:b.latitude,lng:b.longitude,updated:new Date(time).toISOString(),eta:b.eta||null,source:mock?'DEVELOPMENT MOCK':'Courier GPS',note:mock?'Simulated test location':settings().COURIER_PROVIDER,eventId:b.eventId};o.movement??=[];o.movement.push(o.courierTracking);o.movement=o.movement.slice(-100);auditState(s,mock?'mock':settings().COURIER_PROVIDER!,'courier_location',o.id);return {state:s,result:null}});
+}

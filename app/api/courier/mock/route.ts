@@ -1,0 +1,3 @@
+import {settings,sameOrigin,requireUser,readJson,json,failure,HttpError} from '@/lib/security';
+import {courierUpdate} from '@/lib/courier';
+export async function POST(r:Request){try{if(settings().DEMO_MODE==='true')throw new HttpError('This integration is disabled for the project demo.',404);const e=settings();const host=new URL(r.url).hostname;if(e.APP_ENV!=='development'||e.COURIER_MOCK_ENABLED!=='true'||!['localhost','127.0.0.1','test'].includes(host))throw new HttpError('Not found.',404);sameOrigin(r);await requireUser(r,'admin');await courierUpdate(await readJson(r) as any,true);return json({mock:true})}catch(e){return failure(e)}}

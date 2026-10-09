@@ -1,0 +1,10 @@
+import {createRequire} from 'node:module';
+import {writeFile,mkdir} from 'node:fs/promises';
+import assert from 'node:assert/strict';
+import {downloadCertificate} from '../lib/certificate.ts';
+const r=createRequire(process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES+'/stub.js');const {createCanvas}=r('@napi-rs/canvas');
+let saved;
+globalThis.document={createElement:(tag)=>tag==='canvas'?createCanvas(1754,1240):{click(){}}};
+URL.createObjectURL=(blob)=>{saved=blob;return 'blob:test'};URL.revokeObjectURL=()=>{};
+await downloadCertificate({name:'Test Participant',programmeName:'Knitting and crochet',courseLessons:[{},{}],certified:'2026-09-25',certificate:'KISS-TEST-CERTIFICATE'});
+const bytes=new Uint8Array(await saved.arrayBuffer());assert.equal(new TextDecoder().decode(bytes.slice(0,8)),'%PDF-1.4');assert.equal(saved.type,'application/pdf');await mkdir('.sites-runtime/tests',{recursive:true});await writeFile('.sites-runtime/tests/certificate.pdf',bytes);console.log('PASS: certificate download produces a non-empty PDF with JPEG content and cross-reference table.');

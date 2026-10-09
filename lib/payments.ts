@@ -1,0 +1,23 @@
+import {settings,HttpError} from './security';
+import {updateWorkspace} from './workspace';
+import {auditState} from './audit';
+export function paymentsReady(){const e=settings();return e.DEMO_MODE!=='true'&&(e.APP_ENV==='development'||!!e.STRIPE_SECRET_KEY?.startsWith('sk_live_'))&&e.PAYMENTS_ENABLED==='true'&&!!e.STRIPE_SECRET_KEY&&!!e.STRIPE_WEBHOOK_SECRET&&!!e.APP_URL?.startsWith('https://')}
+async function stripe(path:string,body?:URLSearchParams,key?:string){const r=await fetch('https://api.stripe.com/v1/'+path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+settings().STRIPE_SECRET_KEY,...(body?{'Content-Type':'application/x-www-form-urlencoded'}:{}),...(key?{'Idempotency-Key':key}:{})},body,signal:AbortSignal.timeout(15000)});if(!r.ok)throw new HttpError('Payment provider unavailable. Your order is preserved; retry or contact support.',503);return r.json() as Promise<any>}
+export async function startPayment(id:string,account:string){if(!paymentsReady())throw new HttpError('Online payments are not activated. Pay on delivery remains available.',503);
+ const {result:o}=await updateWorkspace(s=>{const o=s.orders?.find(o=>o.id===id&&o.account===account);if(!o)throw new HttpError('Order not found.',404);if(o.paid||o.status==='Cancelled')throw new HttpError('This order cannot be paid online.');if(o.payment?.state==='expired')throw new HttpError('This online payment attempt expired. Use pay on delivery or contact support.');if(!o.payment){o.payment={state:'creating',attempt:crypto.randomUUID(),created:Date.now()};auditState(s,account,'payment_started',id)}return {state:s,result:structuredClone(o)}});
+ if(o.payment.session){const existing=await stripe('checkout/sessions/'+encodeURIComponent(o.payment.session));if(existing.status!=='open'||!existing.url)throw new HttpError('Checkout is closed. Refresh your orders for payment status.');return {url:existing.url}}
+ // Stripe only guarantees idempotency for 24h. Do not create a second session after that window.
+ if(Date.now()-o.payment.created>23*3600000)throw new HttpError('Payment needs administrator reconciliation; no additional charge was started.',409);
+ const origin=new URL(settings().APP_URL!).origin;const body=new URLSearchParams({mode:'payment',success_url:origin+'/orders',cancel_url:origin+'/orders',client_reference_id:o.id,'metadata[order_id]':o.id,'line_items[0][price_data][currency]':'inr','line_items[0][price_data][unit_amount]':String(o.total),'line_items[0][price_data][product_data][name]':'KISS order '+o.reference,'line_items[0][quantity]':'1'});
+ const session=await stripe('checkout/sessions',body,'kiss-'+o.payment.attempt);if(typeof session.id!=='string'||typeof session.url!=='string'||new URL(session.url).hostname!=='checkout.stripe.com')throw new HttpError('Unexpected payment provider response.',503);
+ await updateWorkspace(s=>{const order=s.orders?.find(x=>x.id===id)!;if(order.payment.attempt!==o.payment.attempt)throw new HttpError('Payment attempt changed.',409);order.payment.session=session.id;if(order.payment.state==='creating')order.payment.state='pending';return {state:s,result:null}});return {url:session.url};
+}
+export async function paymentEvent(event:any){if(!['checkout.session.completed','checkout.session.async_payment_succeeded','checkout.session.expired','checkout.session.async_payment_failed'].includes(event.type))return;
+ const incoming=event.data?.object;if(typeof incoming?.id!=='string'||!incoming.id.startsWith('cs_'))throw new HttpError('Invalid payment session.',400);
+ // Signed events are additionally reconciled against the provider's canonical session.
+ const x=await stripe('checkout/sessions/'+encodeURIComponent(incoming.id));const orderId=x.client_reference_id;
+ await updateWorkspace(s=>{const o=s.orders?.find(o=>o.id===orderId);if(!o||!o.payment||o.payment.session!==x.id)throw new HttpError('Payment session not linked yet; retry webhook.',409);
+ const live=settings().STRIPE_SECRET_KEY?.startsWith('sk_live_');if(x.livemode!==live||x.currency!=='inr'||x.amount_total!==o.total||x.mode!=='payment')throw new HttpError('Payment amount, mode or currency mismatch.',400);
+ if(x.payment_status==='paid'){if(o.status==='Cancelled')throw new HttpError('Payment on cancelled order needs manual review.',409);if(!o.paid){o.paid=true;o.paidAt=new Date().toISOString();o.paymentMethod='Stripe';o.payment.state='paid';o.payment.paymentIntent=x.payment_intent;auditState(s,'stripe','payment_verified',o.id)}}else if(x.status==='expired'&&!o.paid&&o.payment.state!=='expired'){o.payment.state='expired';auditState(s,'stripe','payment_expired',o.id)}
+ return {state:s,result:null}});
+}

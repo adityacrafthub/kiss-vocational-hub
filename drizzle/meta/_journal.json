@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1790329771315,
+      "tag": "0000_magical_mantis",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1790338861825,
+      "tag": "0001_absent_devos",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1790348946103,
+      "tag": "0002_sticky_hardball",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1790612657609,
+      "tag": "0003_sparkling_vapor",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1790615758189,
+      "tag": "0004_lyrical_black_bird",
+      "breakpoints": true
+    }
+  ]
+}

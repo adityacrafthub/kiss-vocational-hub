@@ -1,0 +1,4 @@
+import {settings,json,failure,HttpError} from '@/lib/security';
+import {hmac,equal,readBody} from '@/lib/crypto-utils';
+import {courierUpdate} from '@/lib/courier';
+export async function POST(r:Request){try{if(settings().DEMO_MODE==='true')throw new HttpError('This integration is disabled for the project demo.',404);const e=settings();if(!e.COURIER_WEBHOOK_SECRET||!e.COURIER_PROVIDER)throw new HttpError('Courier integration not configured.',503);const body=await readBody(r,12000);const stamp=r.headers.get('x-kiss-timestamp')||'';if(!/^\d+$/.test(stamp)||Math.abs(Date.now()/1000-Number(stamp))>300||!equal(r.headers.get('x-kiss-signature')||'',await hmac(e.COURIER_WEBHOOK_SECRET,stamp+'.'+body)))throw new HttpError('Invalid courier signature or timestamp.',401);await courierUpdate(JSON.parse(body));return json({received:true})}catch(e){return failure(e)}}
